@@ -1,0 +1,86 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Freqtrade
+user_data/backtest_results/*
+!user_data/backtest_results/.gitkeep
+user_data/data/*
+!user_data/data/.gitkeep
+user_data/plot/*
+!user_data/plot/.gitkeep
+user_data/hyperopt_results/*
+!user_data/hyperopt_results/.gitkeep
+user_data/models/*
+!user_data/models/.gitkeep
+*.sqlite
+*.db
+tradesv3.sqlite
+
+# Logs
+*.log
+logs/
+
+# Sensitive Data
+config.json
+.env
+*.key
+*.pem
+secrets/
+
+# OS
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Backups
+backup*/
+*.zip
+*.tar.gz
+
+# Model files (too large)
+*.pkl
+*.h5
+*.joblib
+*.model

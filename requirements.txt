@@ -1,0 +1,43 @@
+# Core Dependencies
+freqtrade>=2024.1
+ccxt>=4.0.0
+
+# Machine Learning
+scikit-learn>=1.3.0
+xgboost>=2.0.0
+catboost>=1.2.0
+hmmlearn>=0.3.0
+stable-baselines3>=2.0.0  # For RL (optional)
+
+# Data Analysis
+pandas>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Technical Analysis
+TA-Lib>=0.4.28
+
+# Visualization (for analysis)
+matplotlib>=3.7.0
+plotly>=5.14.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+hypothesis>=6.82.0
+
+# Code Quality
+black>=23.7.0
+flake8>=6.1.0
+mypy>=1.4.0
+pylint>=2.17.0
+
+# Utilities
+python-dotenv>=1.0.0
+requests>=2.31.0
+colorama>=0.4.6
+
+# Development
+ipython>=8.14.0
+jupyter>=1.0.0
