@@ -58,21 +58,38 @@ Market Data → HMM Regime Detection → FreqAI ML → Strategy Logic → Risk M
 ```
 
 ### Installation
+
+**✅ Validated Setup (2025-10-12)**
+
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/pragma-trading-bot.git
+git clone https://github.com/aminak58/pragma-trading-bot.git
 cd pragma-trading-bot
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+# Create virtual environment with Python 3.11
+python3.11 -m venv venv
+
+# Activate (Windows)
+venv\Scripts\activate
+# Activate (Linux/Mac)
+# source venv/bin/activate
+
+# Upgrade pip
+python -m pip install --upgrade pip
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Setup Freqtrade link
-# (Will be documented in setup guide)
+# Validate environment
+python scripts/validate_environment.py
 ```
+
+**Environment Validated:**
+- ✅ Python 3.11.9
+- ✅ Freqtrade 2025.9.1
+- ✅ FreqAI with datasieve
+- ✅ HMM (hmmlearn 0.3.3)
+- ✅ All ML libraries (sklearn, xgboost, catboost)
 
 ### Run Backtest
 ```bash
