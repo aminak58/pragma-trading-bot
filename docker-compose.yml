@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  # Pragma Trading Bot - Main Service
+  pragma-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pragma-trading-bot:latest
+    container_name: pragma-bot
+    restart: unless-stopped
+    
+    # Environment variables
+    environment:
+      - FREQTRADE_USER_DIR=/freqtrade/user_data
+      - PYTHONUNBUFFERED=1
+    
+    # Volume mounts for persistence
+    volumes:
+      # Config (use config-private.json in production)
+      - ./configs:/freqtrade/configs:ro
+      
+      # User data (strategies, data, logs)
+      - ./user_data:/freqtrade/user_data
+      
+      # Logs
+      - ./logs:/freqtrade/logs
+      
+      # Source code (for development only - remove in production)
+      - ./src:/freqtrade/src:ro
+    
+    # Ports (uncomment if using API)
+    # ports:
+    #   - "8080:8080"
+    
+    # Command (override for different modes)
+    # Development: bash
+    # Backtesting: freqtrade backtesting --config configs/backtest_config.json
+    # Live trading: freqtrade trade --config configs/config-private.json
+    command: bash
+    
+    # Resource limits (adjust based on your system)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network
+    networks:
+      - pragma-net
+
+  # Optional: Jupyter for analysis (development only)
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pragma-trading-bot:latest
+    container_name: pragma-jupyter
+    restart: unless-stopped
+    
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+    
+    volumes:
+      - ./notebooks:/freqtrade/notebooks
+      - ./user_data:/freqtrade/user_data:ro
+      - ./src:/freqtrade/src:ro
+    
+    ports:
+      - "8888:8888"
+    
+    command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''
+    
+    networks:
+      - pragma-net
+    
+    # Only run in development
+    profiles:
+      - development
+
+networks:
+  pragma-net:
+    driver: bridge
+
+volumes:
+  user_data:
+    driver: local
+  logs:
+    driver: local

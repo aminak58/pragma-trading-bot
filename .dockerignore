@@ -1,0 +1,84 @@
+# Pragma Trading Bot - Docker Ignore
+# Files and directories to exclude from Docker build context
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+.tox/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+
+# Documentation build
+docs/_build/
+site/
+
+# Logs
+*.log
+logs/
+
+# Data directories (large, not needed in image)
+user_data/data/
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+
+# Secrets (NEVER include in image)
+config-private.json
+*.key
+*.pem
+.env
+.env.local
+
+# OS
+Thumbs.db
+desktop.ini
+
+# Backups
+*.bak
+*.backup
+*.old
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Misc
+*.tmp
+*.temp
+.cache/
