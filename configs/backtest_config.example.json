@@ -1,0 +1,107 @@
+{
+  "_comment": "Reproducible Backtesting Configuration",
+  "_purpose": "Use this for repeatable backtests with fixed parameters",
+  "_usage": "freqtrade backtesting --config configs/backtest_config.json --strategy RegimeAdaptiveStrategy",
+  "_version": "2025.9.1",
+  "_updated": "2025-10-12",
+
+  "max_open_trades": 5,
+  "stake_currency": "USDT",
+  "stake_amount": 100,
+  "dry_run": true,
+  "timeframe": "5m",
+
+  "exchange": {
+    "name": "binance",
+    "pair_whitelist": [
+      "BTC/USDT",
+      "ETH/USDT",
+      "BNB/USDT",
+      "SOL/USDT",
+      "ADA/USDT"
+    ],
+    "pair_blacklist": []
+  },
+
+  "pairlists": [
+    {
+      "method": "StaticPairList"
+    }
+  ],
+
+  "backtest_config": {
+    "_comment": "Backtesting-specific settings",
+    "timerange": "20240701-20241010",
+    "startup_candle_count": 500,
+    "enable_protections": true,
+    "max_open_trades": 5,
+    "stake_amount": 100,
+    "fee": 0.001,
+    "use_exit_signal": true
+  },
+
+  "protections": [
+    {
+      "method": "StoplossGuard",
+      "lookback_period_candles": 60,
+      "trade_limit": 4,
+      "stop_duration_candles": 30,
+      "required_profit": 0.0
+    },
+    {
+      "method": "MaxDrawdown",
+      "lookback_period_candles": 200,
+      "trade_limit": 20,
+      "stop_duration_candles": 60,
+      "max_allowed_drawdown": 0.2
+    },
+    {
+      "method": "LowProfitPairs",
+      "lookback_period_candles": 360,
+      "trade_limit": 10,
+      "stop_duration_candles": 120,
+      "required_profit": -0.05
+    }
+  ],
+
+  "minimal_roi": {
+    "0": 0.10,
+    "30": 0.05,
+    "60": 0.03,
+    "120": 0.01
+  },
+
+  "stoploss": -0.05,
+
+  "trailing_stop": true,
+  "trailing_stop_positive": 0.01,
+  "trailing_stop_positive_offset": 0.02,
+  "trailing_only_offset_is_reached": true,
+
+  "unfilledtimeout": {
+    "entry": 10,
+    "exit": 10
+  },
+
+  "order_types": {
+    "entry": "limit",
+    "exit": "limit",
+    "stoploss": "market",
+    "stoploss_on_exchange": false
+  },
+
+  "entry_pricing": {
+    "price_side": "same",
+    "use_order_book": true,
+    "order_book_top": 1
+  },
+
+  "exit_pricing": {
+    "price_side": "same",
+    "use_order_book": true,
+    "order_book_top": 1
+  },
+
+  "bot_name": "PragmaBacktest",
+  "initial_state": "running"
+}

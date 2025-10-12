@@ -1,0 +1,56 @@
+{
+  "_comment": "Static pair list for reproducible backtesting",
+  "_usage": "Reference this in your config with StaticPairList method",
+  "_updated": "2025-10-12",
+  "_market": "Binance USDT pairs",
+  "_criteria": "Top volume, established coins, diverse sectors",
+
+  "exchange": "binance",
+  "pairs": [
+    "BTC/USDT",
+    "ETH/USDT",
+    "BNB/USDT",
+    "SOL/USDT",
+    "XRP/USDT",
+    "ADA/USDT",
+    "AVAX/USDT",
+    "DOT/USDT",
+    "MATIC/USDT",
+    "LINK/USDT"
+  ],
+
+  "pair_metadata": {
+    "BTC/USDT": {
+      "sector": "Store of Value",
+      "market_cap_rank": 1,
+      "avg_daily_volume_usd": "30B+"
+    },
+    "ETH/USDT": {
+      "sector": "Smart Contracts",
+      "market_cap_rank": 2,
+      "avg_daily_volume_usd": "15B+"
+    },
+    "BNB/USDT": {
+      "sector": "Exchange Token",
+      "market_cap_rank": 4,
+      "avg_daily_volume_usd": "1B+"
+    },
+    "SOL/USDT": {
+      "sector": "Smart Contracts",
+      "market_cap_rank": 5,
+      "avg_daily_volume_usd": "2B+"
+    },
+    "XRP/USDT": {
+      "sector": "Payments",
+      "market_cap_rank": 6,
+      "avg_daily_volume_usd": "2B+"
+    }
+  },
+
+  "backtesting_notes": {
+    "recommended_timerange": "20240101-20250101",
+    "min_candles_required": 500,
+    "recommended_timeframe": "5m",
+    "data_quality": "Exchange verified OHLCV"
+  }
+}
