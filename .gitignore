@@ -52,12 +52,31 @@ tradesv3.sqlite
 *.log
 logs/
 
-# Sensitive Data
+# Sensitive Data - NEVER COMMIT
 config.json
+config-private.json
+*-private.json
+*-secret.json
 .env
+.env.local
+.env.*.local
 *.key
 *.pem
+*.crt
+*.p12
+*.pfx
 secrets/
+credentials/
+.secrets/
+*.token
+*.password
+api_keys/
+exchange_keys/
+
+# Trading Data - May contain sensitive info
+user_data/strategies/*-private.py
+trades.json
+account_data.json
 
 # OS
 .DS_Store

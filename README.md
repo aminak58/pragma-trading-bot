@@ -3,8 +3,11 @@
 **Production-Ready Adaptive Trading System**
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Freqtrade](https://img.shields.io/badge/freqtrade-2024.x-green.svg)](https://www.freqtrade.io/)
+[![Freqtrade](https://img.shields.io/badge/freqtrade-2025.9.1-green.svg)](https://www.freqtrade.io/)
 [![License](https://img.shields.io/badge/license-Private-red.svg)]()
+[![Tests](https://img.shields.io/badge/tests-99%25%20coverage-brightgreen.svg)]()
+[![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-blue.svg)]()
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)]()
 
 ## 🎯 Overview
 
@@ -50,36 +53,72 @@ Market Data → HMM Regime Detection → FreqAI ML → Strategy Logic → Risk M
 
 ## 🚀 Quick Start
 
-### Prerequisites
-```bash
-# Python 3.11+
-# Freqtrade 2024.x
-# hmmlearn, stable-baselines3
-```
+### Option A: Docker (Recommended)
 
-### Installation
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/pragma-trading-bot.git
+git clone https://github.com/aminak58/pragma-trading-bot.git
 cd pragma-trading-bot
 
-# Create virtual environment
-python -m venv venv
+# Copy and configure
+cp configs/pragma_config.example.json configs/config-private.json
+# Edit config-private.json with your API keys
+
+# Build and run
+docker-compose build
+docker-compose up -d pragma-bot
+
+# Check logs
+docker-compose logs -f pragma-bot
+```
+
+### Option B: Local Installation
+
+```bash
+# Clone repository
+git clone https://github.com/aminak58/pragma-trading-bot.git
+cd pragma-trading-bot
+
+# Create virtual environment (Python 3.11+)
+python3.11 -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Upgrade pip
+python -m pip install --upgrade pip
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Setup Freqtrade link
-# (Will be documented in setup guide)
+# For development (includes testing tools)
+pip install -r requirements-dev.txt
+
+# Validate environment
+python scripts/validate_environment.py
+```
+
+### Run Tests
+
+```bash
+# Unit tests (99% coverage)
+pytest tests/unit/ -v
+
+# Integration tests
+pytest tests/integration/ -v
+
+# All tests with coverage
+pytest --cov=src --cov-report=html
 ```
 
 ### Run Backtest
+
 ```bash
+# Using example config
 freqtrade backtesting \
-  --strategy PragmaAdaptiveScalper \
-  --config configs/pragma_config.json \
-  --timerange 20240101-20250101
+  --strategy RegimeAdaptiveStrategy \
+  --config configs/backtest_config.example.json \
+  --timerange 20240701-20241010
+
+# See docs/INTEGRATION_GUIDE.md for detailed instructions
 ```
 
 ## 📋 Project Status
@@ -110,11 +149,18 @@ freqtrade backtesting \
 
 ## 📚 Documentation
 
-- [Project Charter](docs/PROJECT_CHARTER.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Integration Guide](docs/INTEGRATION_GUIDE.md) ⭐ **New!**
-- [HMM Regime Detection](src/regime/README.md)
+### Core Documentation
+- [Project Charter](docs/PROJECT_CHARTER.md) - Project goals and scope
+- [Architecture](docs/ARCHITECTURE.md) - System design
+- [Roadmap](docs/ROADMAP.md) - Development plan
+
+### Implementation Guides
+- [Integration Guide](docs/INTEGRATION_GUIDE.md) ⭐ - Freqtrade integration
+- [HMM Regime Detection](src/regime/README.md) - Algorithm details
+- [ML Pipeline](docs/ML_PIPELINE.md) 🔥 **Critical** - Data leakage prevention
+- [Security Guide](docs/SECURITY.md) 🔐 **Critical** - API keys & secrets
+
+### Development
 - [Contributing Guidelines](docs/CONTRIBUTING.md)
 
 ## 🔄 Development Workflow
