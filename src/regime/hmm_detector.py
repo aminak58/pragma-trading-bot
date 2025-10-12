@@ -63,9 +63,7 @@ class RegimeDetector:
         
         # Regime names (will be determined after training based on characteristics)
         self.regime_names = {
-            0: "regime_0",
-            1: "regime_1", 
-            2: "regime_2"
+            i: f"regime_{i}" for i in range(n_states)
         }
         
     def prepare_features(self, dataframe: pd.DataFrame) -> np.ndarray:
