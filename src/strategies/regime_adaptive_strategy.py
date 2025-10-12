@@ -29,7 +29,7 @@ from pandas import DataFrame
 from freqtrade.strategy import IStrategy, IntParameter, DecimalParameter
 import talib.abstract as ta
 
-from regime.hmm_detector import RegimeDetector
+from regime.hmm_detector import EnhancedRegimeDetector
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +96,9 @@ class RegimeAdaptiveStrategy(IStrategy):
     sell_adx = IntParameter(20, 50, default=30, space='sell')
     sell_rsi = IntParameter(60, 85, default=70, space='sell')
     
-    # Regime detection parameters
+    # Regime detection parameters (Best practice: 3000-10000 for 5m)
     regime_training_lookback = IntParameter(
-        300, 700, default=500, space='buy'
+        3000, 10000, default=5000, space='buy'
     )
     regime_confidence_threshold = DecimalParameter(
         0.5, 0.9, default=0.7, decimals=2, space='buy'
@@ -108,8 +108,8 @@ class RegimeAdaptiveStrategy(IStrategy):
         """Initialize strategy with HMM regime detector."""
         super().__init__(config)
         
-        # Initialize HMM regime detector
-        self.regime_detector = RegimeDetector(n_states=3, random_state=42)
+        # Initialize Enhanced HMM regime detector
+        self.regime_detector = EnhancedRegimeDetector(n_states=3, random_state=42)
         self.regime_trained = False
         
         # Performance tracking

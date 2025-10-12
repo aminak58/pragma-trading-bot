@@ -1,8 +1,9 @@
 """
 Regime Detection Module
-HMM-based market regime detection for adaptive trading strategies
+
+Hidden Markov Model-based market regime detection with best practices.
 """
 
-from .hmm_detector import RegimeDetector
+from .hmm_detector import EnhancedRegimeDetector
 
-__all__ = ["RegimeDetector"]
+__all__ = ['EnhancedRegimeDetector']
