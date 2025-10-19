@@ -101,8 +101,62 @@ class RegimeAdaptiveStrategy(IStrategy):
         300, 700, default=500, space='buy'
     )
     regime_confidence_threshold = DecimalParameter(
-        0.5, 0.9, default=0.7, decimals=2, space='buy'
+        0.5, 0.9, default=0.3, decimals=2, space='buy'
     )
+    
+    # Dynamic parameters based on regime
+    def get_dynamic_stoploss(self, regime: str, confidence: float) -> float:
+        """Get dynamic stoploss based on regime and confidence"""
+        base_stoploss = -0.05
+        
+        if regime == 'trending':
+            # Tighter stoploss for trending (momentum following)
+            return base_stoploss * 0.8  # -0.04
+        elif regime == 'low_volatility':
+            # Wider stoploss for mean reversion
+            return base_stoploss * 1.2  # -0.06
+        elif regime == 'high_volatility':
+            # Much tighter stoploss for high volatility
+            return base_stoploss * 0.5  # -0.025
+        
+        return base_stoploss
+    
+    def get_dynamic_position_size(self, regime: str, confidence: float, base_amount: float) -> float:
+        """Get dynamic position size based on regime and confidence (relaxed)"""
+        if regime == 'trending' and confidence > 0.6:  # Lowered from 0.8
+            return base_amount * 1.1  # Slightly increased size
+        elif regime == 'low_volatility' and confidence > 0.5:  # Lowered from 0.7
+            return base_amount * 0.9  # Less reduction
+        elif regime == 'high_volatility' and confidence > 0.6:  # Added confidence check
+            return base_amount * 0.7  # Less reduction
+        
+        return base_amount
+    
+    def get_dynamic_roi(self, regime: str, confidence: float) -> dict:
+        """Get dynamic ROI based on regime"""
+        if regime == 'trending':
+            return {
+                "0": 0.12,  # Higher target for trending
+                "30": 0.06,
+                "60": 0.04,
+                "120": 0.02
+            }
+        elif regime == 'low_volatility':
+            return {
+                "0": 0.08,  # Lower target for mean reversion
+                "30": 0.04,
+                "60": 0.02,
+                "120": 0.01
+            }
+        elif regime == 'high_volatility':
+            return {
+                "0": 0.15,  # Higher target for high volatility
+                "30": 0.08,
+                "60": 0.05,
+                "120": 0.02
+            }
+        
+        return self.minimal_roi
     
     def __init__(self, config: dict) -> None:
         """Initialize strategy with HMM regime detector."""
@@ -146,12 +200,12 @@ class RegimeAdaptiveStrategy(IStrategy):
                 dataframe['regime_confidence'] = 0.0
                 return dataframe
         
-            # Add regime prediction if trained
-            if self.regime_trained:
-                try:
+        # Add regime prediction if trained
+        if self.regime_trained:
+            try:
                     # Use sequence prediction with smoothing for better stability
                     regime_sequence, confidence_sequence = self.regime_detector.predict_regime_sequence(
-                        dataframe, smooth_window=5
+                        dataframe, smooth_window=1  # Minimal smoothing to avoid over-confidence
                     )
                     
                     # Ensure length matches dataframe
@@ -186,13 +240,13 @@ class RegimeAdaptiveStrategy(IStrategy):
                     if last_regime in self.regime_stats:
                         self.regime_stats[last_regime]['count'] += 1
                     
-                except Exception as e:
-                    logger.warning(f"Regime prediction failed: {e}")
-                    dataframe['regime'] = 'unknown'
-                    dataframe['regime_confidence'] = 0.0
-            else:
+            except Exception as e:
+                logger.warning(f"Regime prediction failed: {e}")
                 dataframe['regime'] = 'unknown'
                 dataframe['regime_confidence'] = 0.0
+        else:
+            dataframe['regime'] = 'unknown'
+            dataframe['regime_confidence'] = 0.0
         
         # === Technical Indicators ===
         
@@ -234,7 +288,7 @@ class RegimeAdaptiveStrategy(IStrategy):
     
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
-        Define entry signals based on regime.
+        Define enhanced entry signals based on regime with better signal quality.
         
         Args:
             dataframe: Dataframe with indicators
@@ -243,77 +297,101 @@ class RegimeAdaptiveStrategy(IStrategy):
         Returns:
             Dataframe with entry_long column
         """
+        # Initialize entry conditions
+        dataframe['entry_long'] = False
+        
+        # Regime-specific conditions with enhanced logic
         conditions_trending = []
         conditions_low_vol = []
         conditions_high_vol = []
         
-        # === Trending Regime: Momentum following ===
-        conditions_trending.append(
+        # Ultra-relaxed trending regime conditions (Tier 1: Essential only)
+        conditions_trending.extend([
+            # Essential trend confirmation (2 conditions only)
+            (dataframe['adx'] > 15),  # Very relaxed trend strength
+            (dataframe['ema_short'] > dataframe['ema_long']),  # Uptrend
+        ])
+        
+        # Ultra-relaxed low volatility regime conditions (Tier 1: Essential only)
+        conditions_low_vol.extend([
+            # Essential mean reversion setup (2 conditions only)
+            (dataframe['rsi'] < 45),  # Very relaxed oversold
+            (dataframe['close'] < dataframe['bb_lower'] * 1.05),  # Near lower BB
+        ])
+        
+        # Ultra-relaxed high volatility regime conditions (Tier 1: Essential only)
+        conditions_high_vol.extend([
+            # Essential breakout setup (2 conditions only)
+            (dataframe['close'] > dataframe['bb_upper'] * 0.95),  # Breaking upper BB
+            (dataframe['bb_width'] > 0.04),  # Very relaxed high volatility
+        ])
+        
+        # === Enhanced Regime-Specific Entry Logic ===
+        
+        # Trending Regime: Momentum following with confirmation
+        trending_entry = (
             (dataframe['regime'] == 'trending') &
-            (dataframe['regime_confidence'] >= self.regime_confidence_threshold.value)
+            (dataframe['regime_confidence'] >= self.regime_confidence_threshold.value) &
+            # All technical conditions must be met
+            (dataframe['adx'] > 25) & (dataframe['adx'] < 50) &  # Strong but not extreme trend
+            (dataframe['ema_short'] > dataframe['ema_long']) &  # Uptrend
+            (dataframe['close'] > dataframe['ema_short']) &  # Price above short EMA
+            (dataframe['macd'] > dataframe['macdsignal']) &  # MACD bullish
+            (dataframe['macdhist'] > 0) &  # MACD histogram positive
+            (dataframe['rsi'] > 45) & (dataframe['rsi'] < 75) &  # RSI in healthy range
+            (dataframe['bb_width'] > 0.02) &  # Sufficient volatility
+            (dataframe['volume'] > dataframe['volume_mean'] * 1.2)  # Above average volume
         )
-        conditions_trending.append(dataframe['volume'] > dataframe['volume_mean'])
-        conditions_trending.append(
-            dataframe['adx'] > self.buy_adx_trending.value
-        )
-        conditions_trending.append(
-            dataframe['ema_short'] > dataframe['ema_long']
-        )
-        conditions_trending.append(dataframe['close'] > dataframe['ema_short'])
-        conditions_trending.append(dataframe['rsi'] < 70)
         
-        # === Low Volatility Regime: Mean reversion ===
-        conditions_low_vol.append(
+        # Low Volatility Regime: Mean reversion with confirmation
+        low_vol_entry = (
             (dataframe['regime'] == 'low_volatility') &
-            (dataframe['regime_confidence'] >= self.regime_confidence_threshold.value)
+            (dataframe['regime_confidence'] >= self.regime_confidence_threshold.value) &
+            # Mean reversion setup
+            (dataframe['rsi'] < 35) &  # Oversold
+            (dataframe['close'] < dataframe['bb_lower'] * 1.01) &  # Near lower BB
+            (dataframe['bb_width'] < 0.05) &  # Low volatility
+            (dataframe['adx'] < 20) &  # Weak trend
+            (dataframe['macdhist'] > dataframe['macdhist'].shift(1)) &  # MACD improving
+            (dataframe['volume'] > dataframe['volume_mean'] * 0.8)  # Decent volume
         )
-        conditions_low_vol.append(
-            dataframe['close'] < (
-                dataframe['bb_lower'] * (1 + self.buy_bb_lower_offset.value - 1)
-            )
-        )
-        conditions_low_vol.append(
-            dataframe['rsi'] < self.buy_rsi_low_vol.value
-        )
-        conditions_low_vol.append(dataframe['volume'] > 0)
         
-        # === High Volatility Regime: Conservative ===
-        conditions_high_vol.append(
+        # High Volatility Regime: Breakout with confirmation
+        high_vol_entry = (
             (dataframe['regime'] == 'high_volatility') &
-            (dataframe['regime_confidence'] >= self.regime_confidence_threshold.value)
+            (dataframe['regime_confidence'] >= self.regime_confidence_threshold.value) &
+            # Breakout setup
+            (dataframe['close'] > dataframe['bb_upper'] * 0.99) &  # Breaking upper BB
+            (dataframe['bb_width'] > 0.08) &  # High volatility
+            (dataframe['volume'] > dataframe['volume_mean'] * 1.5) &  # High volume
+            (dataframe['rsi'] > 55) & (dataframe['rsi'] < 80) &  # Strong but not overbought
+            (dataframe['adx'] > 30) &  # Strong trend
+            (dataframe['macd'] > dataframe['macdsignal'])  # MACD bullish
         )
-        conditions_high_vol.append(
-            dataframe['atr_percent'] < self.buy_vol_threshold.value
+        
+        # Apply entry signals with regime-specific logic
+        dataframe.loc[trending_entry, 'enter_long'] = 1
+        dataframe.loc[low_vol_entry, 'enter_long'] = 1
+        dataframe.loc[high_vol_entry, 'enter_long'] = 1
+        
+        # Minimal signal confirmation (only essential checks)
+        # 1. Basic volume check (very relaxed)
+        dataframe['volume_confirmation'] = (
+            dataframe['volume'] > dataframe['volume'].rolling(window=20).mean() * 0.8
+        ).astype(bool)
+        
+        # Final entry signal with minimal confirmations
+        dataframe['entry_long'] = (
+            (dataframe['enter_long'] == 1) &
+            dataframe['volume_confirmation']
+            # All other confirmations removed for maximum trade frequency
         )
-        conditions_high_vol.append(dataframe['adx'] > 25)
-        conditions_high_vol.append(dataframe['rsi'] > 40)
-        conditions_high_vol.append(dataframe['rsi'] < 60)
-        conditions_high_vol.append(dataframe['volume'] > dataframe['volume_mean'] * 1.5)
-        
-        # Combine conditions
-        if conditions_trending:
-            dataframe.loc[
-                reduce(lambda x, y: x & y, conditions_trending),
-                'enter_long'
-            ] = 1
-        
-        if conditions_low_vol:
-            dataframe.loc[
-                reduce(lambda x, y: x & y, conditions_low_vol),
-                'enter_long'
-            ] = 1
-        
-        if conditions_high_vol:
-            dataframe.loc[
-                reduce(lambda x, y: x & y, conditions_high_vol),
-                'enter_long'
-            ] = 1
         
         return dataframe
     
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
-        Define exit signals based on regime.
+        Define enhanced exit signals based on regime with better timing.
         
         Args:
             dataframe: Dataframe with indicators
@@ -322,40 +400,85 @@ class RegimeAdaptiveStrategy(IStrategy):
         Returns:
             Dataframe with exit_long column
         """
-        conditions = []
+        # Initialize exit conditions
+        dataframe['exit_long'] = False
         
-        # Exit on regime change to high volatility
-        conditions.append(
+        # === Regime-Specific Exit Logic ===
+        
+        # 1. Trending Regime Exits (momentum weakening)
+        trending_exit = (
+            (dataframe['regime'] == 'trending') &
+            (
+                # Trend weakening signals
+                (dataframe['adx'] < 20) |  # Trend strength declining
+                (dataframe['macd'] < dataframe['macdsignal']) |  # MACD bearish
+                (dataframe['macdhist'] < dataframe['macdhist'].shift(1)) |  # MACD histogram declining
+                (dataframe['close'] < dataframe['ema_short']) |  # Price below short EMA
+                (dataframe['rsi'] > 75)  # Overbought
+            )
+        )
+        
+        # 2. Low Volatility Regime Exits (mean reversion target reached)
+        low_vol_exit = (
+            (dataframe['regime'] == 'low_volatility') &
+            (
+                # Mean reversion target reached
+                (dataframe['close'] > dataframe['bb_upper'] * 0.99) |  # Near upper BB
+                (dataframe['rsi'] > 65) |  # RSI approaching overbought
+                (dataframe['macdhist'] < 0)  # MACD turning negative
+            )
+        )
+        
+        # 3. High Volatility Regime Exits (risk management)
+        high_vol_exit = (
             (dataframe['regime'] == 'high_volatility') &
-            (dataframe['regime_confidence'] > 0.8)
+            (
+                # Risk management exits
+                (dataframe['atr_percent'] > 0.1) |  # Extreme volatility
+                (dataframe['rsi'] > 80) |  # Severely overbought
+                (dataframe['bb_width'] > 0.15)  # Extreme volatility
+            )
         )
         
-        # Exit on overbought RSI
-        conditions.append(dataframe['rsi'] > self.sell_rsi.value)
-        
-        # Exit on ADX decline (trend weakening)
-        conditions.append(
-            (dataframe['adx'] < self.sell_adx.value) &
-            (dataframe['regime'] == 'trending')
+        # 4. Universal Exit Conditions (regime-independent)
+        universal_exit = (
+            # Regime change to unfavorable conditions
+            (dataframe['regime'] == 'high_volatility') & (dataframe['regime_confidence'] > 0.8) |
+            # Technical overbought
+            (dataframe['rsi'] > 80) |
+            # Volume drying up
+            (dataframe['volume'] < dataframe['volume_mean'] * 0.5) |
+            # Price action deterioration
+            (dataframe['close'] < dataframe['close'].rolling(window=5).min()) |
+            # MACD divergence
+            (dataframe['macd'] < dataframe['macdsignal']) & (dataframe['macdhist'] < 0)
         )
         
-        # Exit on price above upper BB (mean reversion)
-        conditions.append(
-            (dataframe['close'] > dataframe['bb_upper']) &
-            (dataframe['regime'] == 'low_volatility')
-        )
+        # Apply exit signals
+        dataframe.loc[trending_exit, 'exit_long'] = 1
+        dataframe.loc[low_vol_exit, 'exit_long'] = 1
+        dataframe.loc[high_vol_exit, 'exit_long'] = 1
+        dataframe.loc[universal_exit, 'exit_long'] = 1
         
-        # MACD bearish crossover
-        conditions.append(
-            (dataframe['macd'] < dataframe['macdsignal']) &
-            (dataframe['macdhist'] < 0)
-        )
+        # Exit confirmation mechanisms
+        # 1. Consecutive exit signals
+        dataframe['exit_confirmation'] = (
+            dataframe['exit_long'].rolling(window=2).sum() >= 1
+        ).astype(bool)
         
-        if conditions:
-            dataframe.loc[
-                reduce(lambda x, y: x | y, conditions),
-                'exit_long'
-            ] = 1
+        # 2. Profit target reached
+        dataframe['profit_target'] = (
+            dataframe['close'] > dataframe['close'].shift(1) * 1.02  # 2% profit
+        ).astype(bool)
+        
+        # 3. Time-based exit (avoid holding too long) - simplified
+        dataframe['time_exit'] = False  # Disable for now to avoid complexity
+        
+        # Final exit signal
+        dataframe['exit_long'] = (
+            (dataframe['exit_long'] == 1) &
+            (dataframe['exit_confirmation'] | dataframe['profit_target'] | dataframe['time_exit'])
+        )
         
         return dataframe
     
@@ -369,11 +492,11 @@ class RegimeAdaptiveStrategy(IStrategy):
         **kwargs
     ) -> float:
         """
-        Custom stoploss adapted to regime.
+        Enhanced custom stoploss adapted to regime and confidence.
         
-        - Trending: Wider stops (let profits run)
-        - Low volatility: Standard stops
-        - High volatility: Tighter stops
+        - Trending: Dynamic stops based on confidence
+        - Low volatility: Wider stops for mean reversion
+        - High volatility: Tighter stops for risk management
         """
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
         
@@ -382,19 +505,27 @@ class RegimeAdaptiveStrategy(IStrategy):
         
         last_candle = dataframe.iloc[-1]
         regime = last_candle.get('regime', 'unknown')
+        confidence = last_candle.get('regime_confidence', 0.5)
         
-        # Regime-adaptive stoploss
-        if regime == 'trending':
-            # Wider stop for trends
-            return -0.08
-        elif regime == 'low_volatility':
-            # Standard stop
-            return -0.05
-        elif regime == 'high_volatility':
-            # Tighter stop for volatile markets
-            return -0.03
-        else:
-            return self.stoploss
+        # Get dynamic stoploss based on regime and confidence
+        dynamic_stoploss = self.get_dynamic_stoploss(regime, confidence)
+        
+        # Additional adjustments based on trade performance
+        if current_profit > 0.02:  # If already 2% profit
+            # Tighten stoploss to lock in profits
+            dynamic_stoploss = max(dynamic_stoploss, -0.02)
+        elif current_profit < -0.01:  # If losing 1%
+            # Tighten stoploss to limit losses
+            dynamic_stoploss = max(dynamic_stoploss, -0.03)
+        
+        # ATR-based adjustment
+        atr_percent = last_candle.get('atr_percent', 2.0)
+        if atr_percent > 3.0:  # High volatility
+            dynamic_stoploss = max(dynamic_stoploss, -0.02)  # Tighter stop
+        elif atr_percent < 1.0:  # Low volatility
+            dynamic_stoploss = min(dynamic_stoploss, -0.08)  # Wider stop
+        
+        return dynamic_stoploss
     
     def confirm_trade_entry(
         self,
@@ -457,9 +588,9 @@ class RegimeAdaptiveStrategy(IStrategy):
         **kwargs
     ) -> float:
         """
-        Regime-adaptive leverage.
+        Enhanced regime-adaptive leverage with confidence-based adjustments.
         
-        Reduces leverage in high volatility regimes.
+        Adjusts leverage based on regime and confidence level.
         """
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
         
@@ -468,16 +599,70 @@ class RegimeAdaptiveStrategy(IStrategy):
         
         last_candle = dataframe.iloc[-1]
         regime = last_candle.get('regime', 'unknown')
+        confidence = last_candle.get('regime_confidence', 0.5)
         
-        # Regime-adaptive leverage
-        if regime == 'high_volatility':
-            return min(proposed_leverage, 1.0)  # No leverage in volatile markets
+        # Base leverage by regime
+        if regime == 'trending':
+            base_leverage = 2.0  # Higher leverage for trends
         elif regime == 'low_volatility':
-            return min(proposed_leverage, 2.0)  # Moderate leverage
-        elif regime == 'trending':
-            return min(proposed_leverage, 3.0)  # Higher leverage for trends
+            base_leverage = 1.5  # Moderate leverage
+        elif regime == 'high_volatility':
+            base_leverage = 1.0  # Conservative leverage
         else:
             return 1.0
+        
+        # Adjust based on confidence
+        confidence_multiplier = 0.5 + (confidence * 0.5)  # 0.5 to 1.0 range
+        adjusted_leverage = base_leverage * confidence_multiplier
+        
+        # Additional risk management
+        atr_percent = last_candle.get('atr_percent', 2.0)
+        if atr_percent > 4.0:  # Extreme volatility
+            adjusted_leverage *= 0.5  # Reduce leverage by half
+        elif atr_percent < 1.0:  # Very low volatility
+            adjusted_leverage *= 1.2  # Slightly increase leverage
+        
+        return min(adjusted_leverage, max_leverage)
+    
+    def custom_stake_amount(
+        self,
+        pair: str,
+        current_time,
+        current_rate: float,
+        proposed_stake: float,
+        min_stake: float,
+        max_stake: float,
+        leverage: float,
+        entry_tag: Optional[str],
+        side: str,
+        **kwargs
+    ) -> float:
+        """
+        Dynamic position sizing based on regime and confidence.
+        
+        Adjusts position size based on regime characteristics and confidence level.
+        """
+        dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+        
+        if len(dataframe) < 1:
+            return proposed_stake
+        
+        last_candle = dataframe.iloc[-1]
+        regime = last_candle.get('regime', 'unknown')
+        confidence = last_candle.get('regime_confidence', 0.5)
+        
+        # Get dynamic position size
+        dynamic_stake = self.get_dynamic_position_size(regime, confidence, proposed_stake)
+        
+        # Additional adjustments
+        atr_percent = last_candle.get('atr_percent', 2.0)
+        if atr_percent > 3.0:  # High volatility
+            dynamic_stake *= 0.7  # Reduce position size
+        elif atr_percent < 1.0:  # Low volatility
+            dynamic_stake *= 1.1  # Slightly increase position size
+        
+        # Ensure within bounds
+        return max(min_stake, min(dynamic_stake, max_stake))
     
     def __del__(self):
         """Log regime statistics on strategy destruction."""

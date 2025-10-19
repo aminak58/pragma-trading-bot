@@ -1,0 +1,27 @@
+{
+    "$schema": "https://schema.freqtrade.io/schema.json",
+    "trading_mode": "futures",
+    "margin_mode": "isolated",
+    "strategies": [],
+	"exchange": {
+		"name": "binance",
+		"key": "",
+		"secret": "",
+		"password": "",
+		"ccxt_config": {},
+		"ccxt_async_config": {}
+	},
+    "leverage": 10,
+    "stake_currency": "USDT",
+    "timeframe": "5m",
+    "dry_run": true,
+    "trailing_stop": true,
+    "trailing_stop_positive": 0.005,
+    "trailing_stop_positive_offset": 0.01,
+    "trailing_only_offset_is_reached": true,
+    "exit_profit_only": true,
+    "exit_profit_offset": 0.01,
+    "use_exit_signal": true,
+    "unfilledtimeout": { "entry": 10, "exit": 10, "unit": "minutes" },
+    "pairlists": [ { "method": "StaticPairList" } ]
+}
