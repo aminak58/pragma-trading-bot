@@ -16,6 +16,9 @@ import numpy as np
 import pandas as pd
 from hmmlearn.hmm import GaussianHMM
 from sklearn.preprocessing import StandardScaler
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class RegimeDetector:
@@ -40,17 +43,18 @@ class RegimeDetector:
         Initialize the RegimeDetector.
         
         Args:
-            n_states: Number of hidden states (default: 3)
+            n_states: Number of hidden states (default: 3 for stability)
             random_state: Random seed for reproducibility
         """
         self.n_states = n_states
         self.random_state = random_state
         
-        # Initialize HMM with full covariance
+        # Initialize HMM with diagonal covariance for stability
         self.model = GaussianHMM(
             n_components=n_states,
-            covariance_type="full",
-            n_iter=100,
+            covariance_type="diag",  # Diagonal covariance for stability
+            n_iter=50,   # Reduced iterations to prevent overfitting
+            tol=1e-3,    # Relaxed tolerance for better convergence
             random_state=random_state,
             verbose=False
         )
@@ -68,13 +72,13 @@ class RegimeDetector:
         
     def prepare_features(self, dataframe: pd.DataFrame) -> np.ndarray:
         """
-        Prepare feature matrix from OHLCV dataframe.
+        Prepare simplified, stable features for HMM training.
         
         Features calculated:
-        1. Returns: Log returns over different periods
-        2. Volatility: Rolling standard deviation of returns
-        3. Volume Ratio: Current volume / average volume
-        4. Trend Strength: ADX or similar momentum indicator
+        1. Returns: Simple returns over key periods
+        2. Volatility: Rolling standard deviation (smoothed)
+        3. Momentum: Price momentum indicators
+        4. Volume: Volume trend (simplified)
         
         Args:
             dataframe: DataFrame with OHLCV data
@@ -94,75 +98,64 @@ class RegimeDetector:
         df = dataframe.copy()
         features = []
         
-        # Feature 1: Returns (multiple timeframes)
-        df['returns_1'] = np.log(df['close'] / df['close'].shift(1))
-        df['returns_5'] = np.log(df['close'] / df['close'].shift(5))
-        df['returns_20'] = np.log(df['close'] / df['close'].shift(20))
-        features.extend(['returns_1', 'returns_5', 'returns_20'])
+        # Feature 1: Simple Returns (1, 5, 20 periods)
+        for period in [1, 5, 20]:
+            df[f'returns_{period}'] = df['close'].pct_change(period)
+            features.append(f'returns_{period}')
         
-        # Feature 2: Volatility (rolling std of returns)
-        df['volatility_10'] = df['returns_1'].rolling(window=10).std()
-        df['volatility_30'] = df['returns_1'].rolling(window=30).std()
-        features.extend(['volatility_10', 'volatility_30'])
+        # Feature 2: Volatility (rolling standard deviation - smoothed)
+        df['volatility_5'] = df['returns_1'].rolling(window=5).std()
+        df['volatility_20'] = df['returns_1'].rolling(window=20).std()
+        # Smooth volatility to reduce noise
+        df['volatility_5'] = df['volatility_5'].rolling(window=3).mean()
+        df['volatility_20'] = df['volatility_20'].rolling(window=5).mean()
+        features.extend(['volatility_5', 'volatility_20'])
         
-        # Feature 3: Volume ratio (current vs average)
-        df['volume_sma'] = df['volume'].rolling(window=20).mean()
-        df['volume_ratio'] = df['volume'] / df['volume_sma']
+        # Feature 3: Price momentum (simple moving averages)
+        df['sma_5'] = df['close'].rolling(window=5).mean()
+        df['sma_20'] = df['close'].rolling(window=20).mean()
+        df['momentum_5'] = (df['close'] - df['sma_5']) / df['sma_5']
+        df['momentum_20'] = (df['close'] - df['sma_20']) / df['sma_20']
+        features.extend(['momentum_5', 'momentum_20'])
+        
+        # Feature 4: Volume trend (simplified and smoothed)
+        df['volume_sma_10'] = df['volume'].rolling(window=10).mean()
+        df['volume_ratio'] = df['volume'] / df['volume_sma_10']
+        # Smooth volume ratio to reduce noise
+        df['volume_ratio'] = df['volume_ratio'].rolling(window=3).mean()
         features.append('volume_ratio')
         
-        # Feature 4: Trend strength (simple ADX approximation)
-        # True Range
-        df['tr'] = np.maximum(
-            df['high'] - df['low'],
-            np.maximum(
-                abs(df['high'] - df['close'].shift(1)),
-                abs(df['low'] - df['close'].shift(1))
-            )
-        )
+        # Feature 5: Price range (high-low normalized)
+        df['price_range'] = (df['high'] - df['low']) / df['close']
+        # Smooth price range
+        df['price_range'] = df['price_range'].rolling(window=3).mean()
+        features.append('price_range')
         
-        # Directional Movement
-        df['up_move'] = df['high'] - df['high'].shift(1)
-        df['down_move'] = df['low'].shift(1) - df['low']
+        # Create feature dataframe
+        feature_df = df[features].dropna()
         
-        df['plus_dm'] = np.where(
-            (df['up_move'] > df['down_move']) & (df['up_move'] > 0),
-            df['up_move'], 0
-        )
-        df['minus_dm'] = np.where(
-            (df['down_move'] > df['up_move']) & (df['down_move'] > 0),
-            df['down_move'], 0
-        )
+        if len(feature_df) == 0:
+            raise ValueError("No valid features after preprocessing")
         
-        # Smoothed indicators (14-period)
-        period = 14
-        df['tr_smooth'] = df['tr'].rolling(window=period).mean()
-        df['plus_di'] = 100 * (df['plus_dm'].rolling(window=period).mean() / df['tr_smooth'])
-        df['minus_di'] = 100 * (df['minus_dm'].rolling(window=period).mean() / df['tr_smooth'])
-        
-        # ADX approximation
-        df['dx'] = 100 * abs(df['plus_di'] - df['minus_di']) / (df['plus_di'] + df['minus_di'])
-        df['adx'] = df['dx'].rolling(window=period).mean()
-        features.append('adx')
-        
-        # Extract feature matrix and handle NaN values
-        feature_matrix = df[features].values
-        
-        # Fill NaN with forward fill then backward fill
-        feature_df = pd.DataFrame(feature_matrix, columns=features)
-        feature_df = feature_df.ffill().bfill()
-        
-        # If still NaN (empty dataframe), fill with zeros
-        feature_df = feature_df.fillna(0)
+        # Remove extreme outliers (beyond 3 standard deviations)
+        for col in feature_df.columns:
+            mean_val = feature_df[col].mean()
+            std_val = feature_df[col].std()
+            if std_val > 0:  # Avoid division by zero
+                feature_df[col] = feature_df[col].clip(
+                    lower=mean_val - 3*std_val,
+                    upper=mean_val + 3*std_val
+                )
         
         return feature_df.values
     
-    def train(self, dataframe: pd.DataFrame, lookback: int = 500) -> 'RegimeDetector':
+    def train(self, dataframe: pd.DataFrame, lookback: int = 1000) -> 'RegimeDetector':
         """
         Train the HMM on historical data.
         
         Args:
             dataframe: Historical OHLCV dataframe
-            lookback: Number of most recent candles to use for training
+            lookback: Number of most recent candles to use for training (minimum 1000)
             
         Returns:
             Self (for method chaining)
@@ -170,8 +163,10 @@ class RegimeDetector:
         Raises:
             ValueError: If insufficient data for training
         """
-        if len(dataframe) < 100:
-            raise ValueError(f"Insufficient data: need at least 100 candles, got {len(dataframe)}")
+        # Ensure minimum data requirements for HMM convergence
+        min_required = 1000
+        if len(dataframe) < min_required:
+            raise ValueError(f"Insufficient data: need at least {min_required} candles, got {len(dataframe)}")
         
         # Use most recent lookback candles
         df_train = dataframe.tail(lookback).copy()
@@ -179,18 +174,28 @@ class RegimeDetector:
         # Prepare features
         X = self.prepare_features(df_train)
         
-        if len(X) < 50:
-            raise ValueError(f"Insufficient valid samples after feature preparation: {len(X)}")
+        if len(X) < 200:
+            raise ValueError(f"Insufficient valid samples after feature preparation: {len(X)} < 200")
         
         # Normalize features
         X_scaled = self.scaler.fit_transform(X)
         
-        # Train HMM
-        self.model.fit(X_scaled)
-        self.is_trained = True
+        # Train HMM with better parameters for convergence
+        self.model.n_iter = 200  # Increase iterations
+        self.model.tol = 1e-6    # Tighter tolerance
         
-        # Determine regime names based on characteristics
-        self._assign_regime_names(X_scaled)
+        try:
+            self.model.fit(X_scaled)
+            self.is_trained = True
+            
+            # Determine regime names based on characteristics
+            self._assign_regime_names(X_scaled)
+            
+            logger.info(f"HMM trained successfully with {X_scaled.shape[0]} samples")
+            
+        except Exception as e:
+            logger.error(f"HMM training failed: {e}")
+            raise
         
         return self
     
@@ -200,8 +205,8 @@ class RegimeDetector:
         
         Analyzes the mean feature values for each state to determine:
         - High volatility regime (high volatility features)
-        - Low volatility regime (low volatility features)
-        - Trending regime (high ADX values)
+        - Low volatility regime (low volatility features)  
+        - Trending regime (high momentum features)
         
         Args:
             X_scaled: Scaled feature matrix used for training
@@ -217,40 +222,53 @@ class RegimeDetector:
             if mask.sum() > 0:
                 state_mean = X_scaled[mask].mean(axis=0)
                 
-                # Features: [returns_1, returns_5, returns_20, vol_10, vol_30, vol_ratio, adx]
-                volatility = (state_mean[3] + state_mean[4]) / 2  # avg of vol features
-                trend_strength = state_mean[6]  # ADX
+                # Features: [returns_1, returns_5, returns_20, volatility_5, volatility_20, momentum_5, momentum_20, volume_ratio, price_range]
+                volatility = (state_mean[3] + state_mean[4]) / 2  # avg of volatility features
+                momentum = (state_mean[5] + state_mean[6]) / 2    # avg of momentum features
+                volume = state_mean[7]  # volume_ratio
                 
                 state_characteristics[state] = {
                     'volatility': volatility,
-                    'trend': trend_strength
+                    'momentum': momentum,
+                    'volume': volume,
+                    'count': mask.sum()
                 }
         
         # Sort states by characteristics
         states_by_vol = sorted(state_characteristics.items(), 
                               key=lambda x: x[1]['volatility'])
-        states_by_trend = sorted(state_characteristics.items(),
-                                key=lambda x: x[1]['trend'])
+        states_by_momentum = sorted(state_characteristics.items(),
+                                   key=lambda x: x[1]['momentum'])
         
         # Assign names based on characteristics
         # Highest volatility = high_volatility
-        # Highest trend = trending
+        # Highest momentum = trending
         # Remaining = low_volatility
         
         high_vol_state = states_by_vol[-1][0]
-        high_trend_state = states_by_trend[-1][0]
+        high_momentum_state = states_by_momentum[-1][0]
+        
+        # Ensure we don't assign the same name twice
+        if high_vol_state == high_momentum_state:
+            # If same state has both high vol and momentum, prioritize volatility
+            high_momentum_state = states_by_momentum[-2][0] if len(states_by_momentum) > 1 else high_vol_state
         
         self.regime_names[high_vol_state] = "high_volatility"
-        self.regime_names[high_trend_state] = "trending"
+        self.regime_names[high_momentum_state] = "trending"
         
-        # Find remaining state for low_volatility
+        # Assign remaining states to low_volatility
         for state in range(self.n_states):
-            if state not in [high_vol_state, high_trend_state]:
+            if state not in [high_vol_state, high_momentum_state]:
                 self.regime_names[state] = "low_volatility"
-                break
+        
+        # Log regime characteristics for debugging
+        logger.info("Regime characteristics:")
+        for state, chars in state_characteristics.items():
+            logger.info(f"  {self.regime_names[state]}: vol={chars['volatility']:.3f}, "
+                       f"momentum={chars['momentum']:.3f}, count={chars['count']}")
         
         # If high_vol and trending are the same state, assign differently
-        if high_vol_state == high_trend_state:
+        if high_vol_state == high_momentum_state:
             remaining_states = [s for s in range(self.n_states) if s != high_vol_state]
             if len(remaining_states) >= 2:
                 self.regime_names[remaining_states[0]] = "low_volatility"
@@ -294,6 +312,71 @@ class RegimeDetector:
         regime_name = self.regime_names[state]
         
         return regime_name, float(confidence)
+    
+    def predict_regime_sequence(self, dataframe: pd.DataFrame, smooth_window: int = 5) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Predict market regimes for entire dataframe with smoothing.
+        
+        Args:
+            dataframe: OHLCV dataframe
+            smooth_window: Window size for smoothing regime transitions
+            
+        Returns:
+            Tuple of (regime_sequence, confidence_sequence)
+            - regime_sequence: Array of regime names for each candle
+            - confidence_sequence: Array of confidence scores for each candle
+        """
+        if not self.is_trained:
+            raise RuntimeError("Model must be trained before prediction. Call train() first.")
+        
+        # Prepare features
+        X = self.prepare_features(dataframe)
+        
+        # Scale features
+        X_scaled = self.scaler.transform(X)
+        
+        # Predict states for entire sequence
+        states = self.model.predict(X_scaled)
+        
+        # Get probability distributions
+        probs = self.model.predict_proba(X_scaled)
+        confidences = np.max(probs, axis=1)
+        
+        # Apply smoothing to reduce noise
+        if smooth_window > 1 and len(states) > smooth_window:
+            states = self._smooth_states(states, smooth_window)
+        
+        # Convert states to regime names
+        regime_sequence = np.array([self.regime_names[state] for state in states])
+        
+        return regime_sequence, confidences
+    
+    def _smooth_states(self, states: np.ndarray, window: int) -> np.ndarray:
+        """
+        Apply smoothing to state sequence to reduce noise.
+        
+        Args:
+            states: Array of state indices
+            window: Smoothing window size
+            
+        Returns:
+            Smoothed state array
+        """
+        smoothed = states.copy()
+        
+        for i in range(window, len(states) - window):
+            # Get window of states
+            window_states = states[i-window//2:i+window//2+1]
+            
+            # Find most common state in window
+            unique, counts = np.unique(window_states, return_counts=True)
+            most_common = unique[np.argmax(counts)]
+            
+            # Only change if confidence is high (most common state appears > 50% of time)
+            if np.max(counts) > window // 2:
+                smoothed[i] = most_common
+        
+        return smoothed
     
     def get_transition_matrix(self) -> np.ndarray:
         """

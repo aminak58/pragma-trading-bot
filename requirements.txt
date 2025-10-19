@@ -4,7 +4,7 @@
 
 # Core Trading Framework
 freqtrade==2025.9.1
-ccxt==4.4.37
+ccxt>=4.5.4
 datasieve==0.1.9  # Required for FreqAI
 
 # Machine Learning - HMM & Regime Detection
