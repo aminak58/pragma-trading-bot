@@ -75,7 +75,7 @@ class RegimeDetector:
         Prepare simplified, stable features for HMM training.
         
         Features calculated:
-        1. Returns: Simple returns over key periods
+        1. Returns: Log returns over key periods (better for crypto data)
         2. Volatility: Rolling standard deviation (smoothed)
         3. Momentum: Price momentum indicators
         4. Volume: Volume trend (simplified)
@@ -98,9 +98,10 @@ class RegimeDetector:
         df = dataframe.copy()
         features = []
         
-        # Feature 1: Simple Returns (1, 5, 20 periods)
+        # Feature 1: Log Returns (1, 5, 20 periods) - Better for crypto data
         for period in [1, 5, 20]:
-            df[f'returns_{period}'] = df['close'].pct_change(period)
+            # Use log returns instead of pct_change for better crypto data handling
+            df[f'returns_{period}'] = np.log(df['close'] / df['close'].shift(period))
             features.append(f'returns_{period}')
         
         # Feature 2: Volatility (rolling standard deviation - smoothed)
