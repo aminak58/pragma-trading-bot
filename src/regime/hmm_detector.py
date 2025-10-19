@@ -72,13 +72,16 @@ class RegimeDetector:
         
     def prepare_features(self, dataframe: pd.DataFrame) -> np.ndarray:
         """
-        Prepare simplified, stable features for HMM training.
+        Prepare enhanced, stable features for HMM training.
         
         Features calculated:
         1. Returns: Log returns over key periods (better for crypto data)
         2. Volatility: Rolling standard deviation (smoothed)
         3. Momentum: Price momentum indicators
         4. Volume: Volume trend (simplified)
+        5. Price Range: High-low normalized range
+        6. Slope Analysis: Trend strength indicators
+        7. Skewness: Distribution asymmetry analysis
         
         Args:
             dataframe: DataFrame with OHLCV data
@@ -131,6 +134,20 @@ class RegimeDetector:
         # Smooth price range
         df['price_range'] = df['price_range'].rolling(window=3).mean()
         features.append('price_range')
+        
+        # Feature 6: Slope analysis (trend strength)
+        df['sma_slope_5'] = df['sma_5'].diff(5)  # 5-period slope of SMA
+        df['sma_slope_20'] = df['sma_20'].diff(5)  # 5-period slope of SMA
+        df['trend_strength'] = df['sma_slope_20'] * df['momentum_20']  # Combined trend strength
+        features.extend(['sma_slope_5', 'sma_slope_20', 'trend_strength'])
+        
+        # Feature 7: Skewness analysis (distribution asymmetry)
+        df['returns_skew_5'] = df['returns_1'].rolling(window=5).skew()
+        df['returns_skew_20'] = df['returns_1'].rolling(window=20).skew()
+        # Smooth skewness to reduce noise
+        df['returns_skew_5'] = df['returns_skew_5'].rolling(window=3).mean()
+        df['returns_skew_20'] = df['returns_skew_20'].rolling(window=5).mean()
+        features.extend(['returns_skew_5', 'returns_skew_20'])
         
         # Create feature dataframe
         feature_df = df[features].dropna()
@@ -223,15 +240,21 @@ class RegimeDetector:
             if mask.sum() > 0:
                 state_mean = X_scaled[mask].mean(axis=0)
                 
-                # Features: [returns_1, returns_5, returns_20, volatility_5, volatility_20, momentum_5, momentum_20, volume_ratio, price_range]
+                # Features: [returns_1, returns_5, returns_20, volatility_5, volatility_20, momentum_5, momentum_20, volume_ratio, price_range, sma_slope_5, sma_slope_20, trend_strength, returns_skew_5, returns_skew_20]
                 volatility = (state_mean[3] + state_mean[4]) / 2  # avg of volatility features
                 momentum = (state_mean[5] + state_mean[6]) / 2    # avg of momentum features
                 volume = state_mean[7]  # volume_ratio
+                slope = (state_mean[9] + state_mean[10]) / 2     # avg of slope features
+                skewness = (state_mean[12] + state_mean[13]) / 2  # avg of skewness features
+                trend_strength = state_mean[11]  # trend_strength
                 
                 state_characteristics[state] = {
                     'volatility': volatility,
                     'momentum': momentum,
                     'volume': volume,
+                    'slope': slope,
+                    'skewness': skewness,
+                    'trend_strength': trend_strength,
                     'count': mask.sum()
                 }
         
@@ -240,36 +263,45 @@ class RegimeDetector:
                               key=lambda x: x[1]['volatility'])
         states_by_momentum = sorted(state_characteristics.items(),
                                    key=lambda x: x[1]['momentum'])
+        states_by_trend = sorted(state_characteristics.items(),
+                                key=lambda x: x[1]['trend_strength'])
+        states_by_slope = sorted(state_characteristics.items(),
+                                key=lambda x: x[1]['slope'])
         
-        # Assign names based on characteristics
-        # Highest volatility = high_volatility
-        # Highest momentum = trending
-        # Remaining = low_volatility
+        # Enhanced regime assignment using multiple criteria
+        # 1. High volatility + high skewness = high_volatility
+        # 2. High trend strength + positive slope = trending  
+        # 3. Low volatility + low momentum = low_volatility
         
         high_vol_state = states_by_vol[-1][0]
-        high_momentum_state = states_by_momentum[-1][0]
+        high_trend_state = states_by_trend[-1][0]
+        high_slope_state = states_by_slope[-1][0]
         
-        # Ensure we don't assign the same name twice
-        if high_vol_state == high_momentum_state:
-            # If same state has both high vol and momentum, prioritize volatility
-            high_momentum_state = states_by_momentum[-2][0] if len(states_by_momentum) > 1 else high_vol_state
-        
+        # Assign high_volatility: highest volatility with consideration of skewness
         self.regime_names[high_vol_state] = "high_volatility"
-        self.regime_names[high_momentum_state] = "trending"
+        
+        # Assign trending: best combination of trend strength and slope
+        if high_trend_state == high_vol_state:
+            # If same state, choose next best for trending
+            high_trend_state = states_by_trend[-2][0] if len(states_by_trend) > 1 else high_slope_state
+        
+        self.regime_names[high_trend_state] = "trending"
         
         # Assign remaining states to low_volatility
         for state in range(self.n_states):
-            if state not in [high_vol_state, high_momentum_state]:
+            if state not in [high_vol_state, high_trend_state]:
                 self.regime_names[state] = "low_volatility"
         
         # Log regime characteristics for debugging
-        logger.info("Regime characteristics:")
+        logger.info("Enhanced regime characteristics:")
         for state, chars in state_characteristics.items():
             logger.info(f"  {self.regime_names[state]}: vol={chars['volatility']:.3f}, "
-                       f"momentum={chars['momentum']:.3f}, count={chars['count']}")
+                       f"momentum={chars['momentum']:.3f}, slope={chars['slope']:.3f}, "
+                       f"skewness={chars['skewness']:.3f}, trend_strength={chars['trend_strength']:.3f}, "
+                       f"count={chars['count']}")
         
         # If high_vol and trending are the same state, assign differently
-        if high_vol_state == high_momentum_state:
+        if high_vol_state == high_trend_state:
             remaining_states = [s for s in range(self.n_states) if s != high_vol_state]
             if len(remaining_states) >= 2:
                 self.regime_names[remaining_states[0]] = "low_volatility"
