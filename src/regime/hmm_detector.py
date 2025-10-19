@@ -15,7 +15,7 @@ from typing import Tuple, Optional
 import numpy as np
 import pandas as pd
 from hmmlearn.hmm import GaussianHMM
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler
 import logging
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ class RegimeDetector:
     Attributes:
         n_states (int): Number of hidden states (default: 3)
         model (GaussianHMM): The trained HMM model
-        scaler (StandardScaler): Feature scaler for normalization
+        scaler (RobustScaler): Feature scaler for robust normalization
         is_trained (bool): Whether the model has been trained
         regime_names (dict): Mapping from state index to regime name
     """
@@ -59,8 +59,8 @@ class RegimeDetector:
             verbose=False
         )
         
-        # Feature scaler for normalization
-        self.scaler = StandardScaler()
+        # Feature scaler for normalization (using RobustScaler for better outlier handling)
+        self.scaler = RobustScaler()
         
         # Training status
         self.is_trained = False
