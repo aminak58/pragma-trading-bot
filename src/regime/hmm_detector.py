@@ -346,13 +346,14 @@ class RegimeDetector:
         
         return regime_name, float(confidence)
     
-    def predict_regime_sequence(self, dataframe: pd.DataFrame, smooth_window: int = 5) -> Tuple[np.ndarray, np.ndarray]:
+    def predict_regime_sequence(self, dataframe: pd.DataFrame, smooth_window: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Predict market regimes for entire dataframe with smoothing.
+        Predict market regimes for entire dataframe with dynamic smoothing.
         
         Args:
             dataframe: OHLCV dataframe
-            smooth_window: Window size for smoothing regime transitions
+            smooth_window: Window size for smoothing regime transitions.
+                          If None, uses dynamic window based on dataset size.
             
         Returns:
             Tuple of (regime_sequence, confidence_sequence)
@@ -374,6 +375,10 @@ class RegimeDetector:
         # Get probability distributions
         probs = self.model.predict_proba(X_scaled)
         confidences = np.max(probs, axis=1)
+        
+        # Calculate dynamic smoothing window if not provided
+        if smooth_window is None:
+            smooth_window = self._calculate_dynamic_smooth_window(len(states))
         
         # Apply smoothing to reduce noise
         if smooth_window > 1 and len(states) > smooth_window:
@@ -410,6 +415,43 @@ class RegimeDetector:
                 smoothed[i] = most_common
         
         return smoothed
+    
+    def _calculate_dynamic_smooth_window(self, sequence_length: int) -> int:
+        """
+        Calculate dynamic smoothing window based on sequence length and characteristics.
+        
+        Args:
+            sequence_length: Length of the sequence to be smoothed
+            
+        Returns:
+            Optimal smoothing window size
+        """
+        # Base window size based on sequence length
+        # Use 0.2% of sequence length, but with reasonable bounds
+        base_window = max(3, int(sequence_length * 0.002))
+        
+        # Adjust based on sequence characteristics
+        if sequence_length < 100:
+            # Small datasets: minimal smoothing
+            window = min(3, base_window)
+        elif sequence_length < 500:
+            # Medium datasets: moderate smoothing
+            window = min(5, base_window)
+        elif sequence_length < 2000:
+            # Large datasets: more smoothing
+            window = min(10, base_window)
+        else:
+            # Very large datasets: adaptive smoothing
+            window = min(20, base_window)
+        
+        # Ensure window is odd for better smoothing
+        if window % 2 == 0:
+            window += 1
+        
+        # Log the dynamic window calculation
+        logger.debug(f"Dynamic smooth window: {window} (sequence_length: {sequence_length})")
+        
+        return window
     
     def get_transition_matrix(self) -> np.ndarray:
         """
