@@ -179,5 +179,23 @@ class BaseExecutor:
         
         logger.info("=" * 60)
     
+    def get_execution_context(self) -> Dict[str, Any]:
+        """
+        Get execution context information.
+        
+        Returns:
+            Dictionary with execution details
+        """
+        return {
+            'executor_type': self.__class__.__name__,
+            'mode': self.mode.value,
+            'dry_run': self.config.get('dry_run', True),
+            'strategy': self.config.get('strategy', 'Unknown'),
+            'stake_currency': self.config.get('stake_currency'),
+            'timeframe': self.config.get('timeframe'),
+            'max_open_trades': self.config.get('max_open_trades'),
+            'exchange': self.config.get('exchange', {}).get('name', 'Unknown')
+        }
+    
     def __repr__(self):
         return f"{self.__class__.__name__}(mode={self.mode.value})"

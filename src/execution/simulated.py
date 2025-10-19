@@ -69,9 +69,7 @@ class SimulatedExecutor(BaseExecutor):
         """
         Execute simulated trading.
         
-        This is a placeholder for actual Freqtrade execution logic.
-        In production, this would interface with Freqtrade's backtesting
-        or dry-run functionality.
+        Integrates with Freqtrade for actual backtesting or dry-run execution.
         """
         self.log_execution_start()
         
@@ -82,12 +80,55 @@ class SimulatedExecutor(BaseExecutor):
         if not self.validate_execution_allowed():
             raise RuntimeError("Execution not allowed")
         
-        # Here would go actual Freqtrade integration
-        # For now, just log
-        logger.info(f"Mode: {self.mode.value}")
-        logger.info("Strategy would execute here (simulated)")
+        # Import Freqtrade integration
+        from .freqtrade_integration import FreqtradeManager
         
-        return True
+        try:
+            # Initialize Freqtrade manager
+            manager = FreqtradeManager(self.config)
+            
+            # Execute based on mode
+            if self.mode == ExecutionMode.BACKTEST:
+                logger.info("Starting backtest execution")
+                
+                # Get timerange from config
+                timerange = self.config.get('timerange', '20240101-20241001')
+                
+                # Run backtest
+                result = manager.run_backtest(
+                    config_path="configs/config-private.json",
+                    timerange=timerange
+                )
+                
+                if result['success']:
+                    logger.info("Backtest completed successfully")
+                    logger.info(f"Results: {result.get('results', {})}")
+                else:
+                    logger.error(f"Backtest failed: {result.get('error')}")
+                    return False
+                
+            else:  # DRY_RUN
+                logger.info("Starting dry-run execution")
+                
+                # Run dry-run
+                result = manager.run_dry_run(
+                    config_path="configs/config-private.json"
+                )
+                
+                if result['success']:
+                    logger.info("Dry-run completed successfully")
+                else:
+                    logger.error(f"Dry-run failed: {result.get('error')}")
+                    return False
+            
+            # Cleanup
+            manager.cleanup()
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error in simulated execution: {e}")
+            return False
     
     def can_execute_live_trades(self) -> bool:
         """

@@ -140,10 +140,34 @@ class LiveExecutor(BaseExecutor):
         # Log trade start
         self._log_live_start()
         
-        # Here would go actual Freqtrade live trading integration
-        logger.critical("Live trading active - monitoring for signals...")
+        # Import Freqtrade integration
+        from .freqtrade_integration import FreqtradeManager
         
-        return True
+        try:
+            # Initialize Freqtrade manager
+            manager = FreqtradeManager(self.config)
+            
+            logger.critical("Starting live trading execution")
+            
+            # Run live trading
+            result = manager.run_live_trading(
+                config_path="configs/config-private.json"
+            )
+            
+            if result['success']:
+                logger.critical("Live trading completed successfully")
+            else:
+                logger.critical(f"Live trading failed: {result.get('error')}")
+                return False
+            
+            # Cleanup
+            manager.cleanup()
+            
+            return True
+            
+        except Exception as e:
+            logger.critical(f"Error in live execution: {e}")
+            return False
     
     def _log_live_start(self):
         """Log live trading start to file for audit trail."""

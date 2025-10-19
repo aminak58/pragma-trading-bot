@@ -1,0 +1,167 @@
+{
+  "strategy": "RegimeAdaptiveStrategy",
+  "strategy_path": "src/strategies",
+  "timeframe": "5m",
+  "dry_run": false,
+  "stake_currency": "USDT",
+  "stake_amount": 1000,
+  "max_open_trades": 3,
+  "tradable_balance_ratio": 0.99,
+  "exchange": {
+    "name": "binance",
+    "key": "YOUR_LIVE_API_KEY",
+    "secret": "YOUR_LIVE_SECRET_KEY",
+    "ccxt_config": {
+      "enableRateLimit": true,
+      "rateLimit": 1200
+    },
+    "ccxt_async_config": {
+      "enableRateLimit": true,
+      "rateLimit": 1200
+    }
+  },
+  "pairlists": [
+    {
+      "method": "StaticPairList"
+    }
+  ],
+  "pairs": [
+    "BTC/USDT",
+    "ETH/USDT",
+    "BNB/USDT"
+  ],
+  "edge": {
+    "enabled": false
+  },
+  "telegram": {
+    "enabled": true,
+    "token": "YOUR_TELEGRAM_BOT_TOKEN",
+    "chat_id": "YOUR_TELEGRAM_CHAT_ID",
+    "reload": true,
+    "balance_dust_level": 0.01
+  },
+  "api_server": {
+    "enabled": true,
+    "listen_ip_address": "127.0.0.1",
+    "listen_port": 8080,
+    "username": "freqtrade",
+    "password": "YOUR_STRONG_API_PASSWORD",
+    "jwt_secret_key": "YOUR_JWT_SECRET_KEY",
+    "CORS_origins": ["http://localhost:3000"],
+    "ws_token": "YOUR_WS_TOKEN"
+  },
+  "bot_name": "Pragma-Live",
+  "initial_state": "running",
+  "force_entry_enable": false,
+  "internals": {
+    "process_throttle_secs": 5,
+    "heartbeat_interval": 60
+  },
+  "execution": {
+    "mode": "live",
+    "confirm_live": true,
+    "safety_phrase": "I_UNDERSTAND_THE_RISKS",
+    "safety_checks": true,
+    "monitoring": true,
+    "alerts": true,
+    "emergency_stop": true
+  },
+  "risk_management": {
+    "max_position_size": 0.02,
+    "max_total_exposure": 0.10,
+    "daily_loss_limit": 0.05,
+    "max_drawdown": 0.10,
+    "circuit_breakers": {
+      "enabled": true,
+      "max_consecutive_losses": 5,
+      "volatility_threshold": 0.05,
+      "emergency_stop": true
+    },
+    "kelly_criterion": {
+      "enabled": true,
+      "max_kelly_fraction": 0.25,
+      "regime_adjustment": true
+    },
+    "dynamic_stops": {
+      "enabled": true,
+      "atr_multiplier": 2.0,
+      "trailing_stop": true,
+      "breakeven_protection": true
+    }
+  },
+  "regime_detection": {
+    "enabled": true,
+    "n_states": 3,
+    "lookback": 500,
+    "retrain_interval": 15,
+    "confidence_threshold": 0.7
+  },
+  "freqai": {
+    "enabled": true,
+    "model_training": {
+      "enabled": true,
+      "retrain_interval": 15,
+      "min_training_samples": 1000,
+      "auto_retrain": true
+    },
+    "feature_engineering": {
+      "enabled": true,
+      "include_regime_features": true,
+      "include_technical_features": true,
+      "include_volume_features": true,
+      "include_statistical_features": true,
+      "include_lagged_features": true
+    },
+    "model_selection": {
+      "enabled": true,
+      "ensemble_method": "weighted_average",
+      "confidence_threshold": 0.6
+    }
+  },
+  "monitoring": {
+    "enabled": true,
+    "metrics_interval": 300,
+    "health_check_interval": 60,
+    "performance_tracking": true,
+    "real_time_dashboard": true,
+    "alert_thresholds": {
+      "memory_usage": 80,
+      "cpu_usage": 80,
+      "response_time": 1000,
+      "error_rate": 5
+    }
+  },
+  "alerts": {
+    "enabled": true,
+    "telegram": true,
+    "email": true,
+    "webhook": false,
+    "levels": ["WARNING", "ERROR", "CRITICAL"],
+    "emergency_contacts": [
+      "YOUR_EMERGENCY_EMAIL",
+      "YOUR_EMERGENCY_PHONE"
+    ]
+  },
+  "security": {
+    "api_key_permissions": "read_only",
+    "ip_whitelist": ["YOUR_IP_ADDRESS"],
+    "rate_limiting": true,
+    "encryption": true,
+    "audit_logging": true
+  },
+  "backup": {
+    "enabled": true,
+    "interval": "daily",
+    "retention_days": 30,
+    "encryption": true,
+    "cloud_storage": false
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "file": "logs/live_trading.log",
+    "max_bytes": 10485760,
+    "backup_count": 10,
+    "audit_log": "logs/audit.log"
+  }
+}
