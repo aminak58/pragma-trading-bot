@@ -148,6 +148,55 @@ class RegimeDetector:
         df['returns_skew_5'] = df['returns_skew_5'].rolling(window=3).mean()
         df['returns_skew_20'] = df['returns_skew_20'].rolling(window=5).mean()
         features.extend(['returns_skew_5', 'returns_skew_20'])
+
+        # Trend Phase Score scaffold (v2): lightweight, no behavior change for now
+        # This computes components but does not add to features to avoid impacting the trained model yet.
+        try:
+            ema20 = df['close'].ewm(span=20, adjust=False).mean()
+            ema50 = df['close'].ewm(span=50, adjust=False).mean()
+            ema100 = df['close'].ewm(span=100, adjust=False).mean()
+            # Slopes
+            slope20 = ema20.diff()
+            slope50 = ema50.diff()
+            slope100 = ema100.diff()
+            # MACD slope (approx via diff of MACD line)
+            macd_fast = df['close'].ewm(span=12, adjust=False).mean()
+            macd_slow = df['close'].ewm(span=26, adjust=False).mean()
+            macd = macd_fast - macd_slow
+            macd_slope = macd.diff()
+            # Z-score vs EMA50
+            price_minus_ema50 = df['close'] - ema50
+            zscore_ema50 = (price_minus_ema50 - price_minus_ema50.rolling(50).mean()) / (price_minus_ema50.rolling(50).std())
+            # Distance to BB mid (20)
+            bb_mid = df['close'].rolling(20).mean()
+            dist_bb_mid = (df['close'] - bb_mid) / bb_mid
+            # Phase location: distance to rolling extrema
+            roll_high = df['close'].rolling(100).max()
+            roll_low = df['close'].rolling(100).min()
+            dist_to_high = (roll_high - df['close']) / roll_high
+            dist_to_low = (df['close'] - roll_low) / roll_low
+            recovery_from_low = (df['close'] - roll_low) / (roll_high - roll_low + 1e-9)
+            # Trend quality / volatility
+            bb_width = (df['high'].rolling(20).max() - df['low'].rolling(20).min()) / df['close']
+            atr_pct = ((df['high'] - df['low']).rolling(14).mean() / df['close'])
+            # Exhaustion proxy
+            rsi = 100 - (100 / (1 + (df['close'].diff().clip(lower=0).rolling(14).mean() / (df['close'].diff().abs().rolling(14).mean() - df['close'].diff().clip(lower=0).rolling(14).mean() + 1e-9))))
+            # Composite (not returned): weighted sum
+            trend_phase_score = (
+                0.25 * slope20.fillna(0) +
+                0.15 * slope50.fillna(0) +
+                0.10 * slope100.fillna(0) +
+                0.15 * macd_slope.fillna(0) +
+                0.15 * zscore_ema50.fillna(0) +
+                0.10 * dist_bb_mid.fillna(0) +
+                0.05 * recovery_from_low.fillna(0) +
+                (-0.05) * bb_width.fillna(0)
+            )
+            # Store in df for debugging (not part of features to keep current behavior stable)
+            df['_trend_phase_score'] = trend_phase_score
+        except Exception:
+            # Silent: keep current behavior intact if any component fails
+            df['_trend_phase_score'] = np.nan
         
         # Create feature dataframe
         feature_df = df[features].dropna()
