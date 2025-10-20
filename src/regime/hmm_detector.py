@@ -215,7 +215,7 @@ class RegimeDetector:
                 )
         
         return feature_df.values
-
+    
     
     def compute_trend_phase_score(self, dataframe: pd.DataFrame, window: int = 50) -> pd.Series:
         """
@@ -334,6 +334,163 @@ class RegimeDetector:
             'count': int(df['score'].dropna().shape[0])
         }
 
+    # ========================
+    # v2: 5-State Phase Labeling
+    # ========================
+    @staticmethod
+    def _winsorize(series: pd.Series, p_low: float = 0.01, p_high: float = 0.99) -> pd.Series:
+        s = series.dropna()
+        if s.empty:
+            return series
+        lo = s.quantile(p_low)
+        hi = s.quantile(p_high)
+        return series.clip(lower=lo, upper=hi)
+
+    @staticmethod
+    def _rolling_z(series: pd.Series, window: int = 300) -> pd.Series:
+        m = series.rolling(window).mean()
+        sd = series.rolling(window).std()
+        return (series - m) / (sd + 1e-9)
+
+    def get_default_percentile_thresholds(self, dataframe: pd.DataFrame) -> dict:
+        """
+        Compute default percentile thresholds on rolling-z normalized Trend Phase Score.
+        Percentiles are computed on the available sample to remain pair/timeframe-robust.
+        Returns a dict with keys: p10,p15,p20,p30,p40,p60,p70,p80,p85,p90
+        """
+        raw = self.compute_trend_phase_score(dataframe)
+        score_w = self._winsorize(raw)
+        score = self._rolling_z(score_w)
+        qs = score.dropna().quantile([0.10, 0.15, 0.20, 0.30, 0.40, 0.60, 0.70, 0.80, 0.85, 0.90]).to_dict()
+        # Map to named keys
+        keys = [0.10, 0.15, 0.20, 0.30, 0.40, 0.60, 0.70, 0.80, 0.85, 0.90]
+        names = ['p10','p15','p20','p30','p40','p60','p70','p80','p85','p90']
+        return {name: float(qs.get(k, np.nan)) for name, k in zip(names, keys)}
+
+    def label_trend_phase_5state(
+        self,
+        dataframe: pd.DataFrame,
+        conf_series: Optional[pd.Series] = None,
+        conf_min: float = 0.6,
+        median_window: int = 5,
+        dwell_min: int = 3
+    ) -> pd.Series:
+        """
+        Label each bar with one of 5 phases using Trend Phase Score + simple slope/volatility proxies
+        and hysteresis banding. Confidence gating is optional via conf_series.
+
+        States: ['Uptrend_Early','Uptrend_Late','Downtrend_Early','Downtrend_Late','Sideways']
+
+        Rules (percentile-based thresholds after rolling z-score):
+        - Uptrend_Early: score >= p80 AND acceleration > 0
+        - Uptrend_Late: p85..p90 AND acceleration <= 0 (exhaustion)
+        - Downtrend_Early: score <= p20 AND acceleration < 0
+        - Downtrend_Late: p10..p15 AND acceleration >= 0
+        - Sideways override: low volatility (bb_width below p30) AND |slope20| small
+
+        Hysteresis (entry/exit bands):
+        - Early in/out = 80/70 (up) and 20/30 (down)
+        - Late in/out = 90/85 (up) and 10/15 (down)
+        Median filter window=5 and min dwell of 3 bars applied.
+        """
+        df = dataframe.copy()
+
+        # Compute normalized score
+        raw = self.compute_trend_phase_score(df)
+        score = self._rolling_z(self._winsorize(raw)).rename('score')
+
+        # EMA-based slope/acceleration proxies
+        ema20 = df['close'].ewm(span=20, adjust=False).mean()
+        slope20 = ema20.diff()
+        accel20 = slope20.diff()
+
+        # Volatility proxy (BB width approx via range) and small-slope override
+        bb_width = (df['high'].rolling(20).max() - df['low'].rolling(20).min()) / df['close']
+
+        # Percentiles computed on current sample
+        thresholds = self.get_default_percentile_thresholds(df)
+        p10 = thresholds['p10']; p15 = thresholds['p15']; p20 = thresholds['p20']
+        p30 = thresholds['p30']; p70 = thresholds['p70']
+        p80 = thresholds['p80']; p85 = thresholds['p85']; p90 = thresholds['p90']
+
+        # Hysteresis labeling
+        labels = pd.Series('Neutral', index=score.index, dtype='object')
+        state = 'Neutral'
+        for t, v in score.items():
+            a = accel20.loc[t] if t in accel20.index else np.nan
+            bw = bb_width.loc[t] if t in bb_width.index else np.nan
+            # Sideways override (low bb width and small slope)
+            is_sideways = False
+            if not pd.isna(bw) and not pd.isna(slope20.loc[t]):
+                is_sideways = (bw <= bb_width.quantile(0.30)) and (abs(slope20.loc[t]) <= abs(slope20).quantile(0.30))
+
+            if pd.isna(v):
+                labels.at[t] = state
+                continue
+
+            # Confidence gating (optional)
+            if conf_series is not None:
+                c = conf_series.loc[t] if t in conf_series.index else np.nan
+                if pd.isna(c) or c < conf_min:
+                    # keep prior state but mark as Neutral if required
+                    labels.at[t] = state
+                    continue
+
+            if state == 'Neutral':
+                if is_sideways:
+                    state = 'Sideways'
+                elif v >= p90 and (not pd.isna(a) and a <= 0):
+                    state = 'Uptrend_Late'
+                elif v >= p80 and (not pd.isna(a) and a > 0):
+                    state = 'Uptrend_Early'
+                elif v <= p10 and (not pd.isna(a) and a >= 0):
+                    state = 'Downtrend_Late'
+                elif v <= p20 and (not pd.isna(a) and a < 0):
+                    state = 'Downtrend_Early'
+            elif state == 'Uptrend_Early':
+                # Exit band to Neutral
+                if v < p70:
+                    state = 'Neutral'
+            elif state == 'Downtrend_Early':
+                if v > p30:
+                    state = 'Neutral'
+            elif state == 'Uptrend_Late':
+                if v < p85:
+                    state = 'Neutral'
+            elif state == 'Downtrend_Late':
+                if v > p15:
+                    state = 'Neutral'
+
+            labels.at[t] = state if not is_sideways else 'Sideways'
+
+        # Median filter (stability)
+        if median_window and median_window > 1:
+            as_int = labels.map({
+                'Downtrend_Late': -2,
+                'Downtrend_Early': -1,
+                'Neutral': 0,
+                'Sideways': 0,
+                'Uptrend_Early': 1,
+                'Uptrend_Late': 2
+            }).fillna(0)
+            filt = as_int.rolling(median_window, center=True, min_periods=1).median().round().astype(int)
+            labels = filt.map({-2: 'Downtrend_Late', -1: 'Downtrend_Early', 0: 'Neutral', 1: 'Uptrend_Early', 2: 'Uptrend_Late'})
+
+        # Enforce minimum dwell by collapsing short runs to previous state
+        if dwell_min and dwell_min > 1:
+            runs = (labels != labels.shift(1)).cumsum()
+            sizes = labels.groupby(runs).size()
+            idx = 0
+            for rid, size in sizes.items():
+                if size < dwell_min:
+                    start = idx
+                    end = idx + size
+                    prev_state = labels.iloc[start - 1] if start > 0 else 'Neutral'
+                    labels.iloc[start:end] = prev_state
+                idx += size
+
+        return labels.rename('trend_phase_5state')
+
     
     def train(self, dataframe: pd.DataFrame, lookback: int = 1000) -> 'RegimeDetector':
         """
@@ -371,11 +528,11 @@ class RegimeDetector:
         self.model.tol = 1e-6    # Tighter tolerance
         
         try:
-            self.model.fit(X_scaled)
-            self.is_trained = True
-            
-            # Determine regime names based on characteristics
-            self._assign_regime_names(X_scaled)
+        self.model.fit(X_scaled)
+        self.is_trained = True
+        
+        # Determine regime names based on characteristics
+        self._assign_regime_names(X_scaled)
             
             logger.info(f"HMM trained successfully with {X_scaled.shape[0]} samples")
             
@@ -391,7 +548,7 @@ class RegimeDetector:
         
         Analyzes the mean feature values for each state to determine:
         - High volatility regime (high volatility features)
-        - Low volatility regime (low volatility features)  
+        - Low volatility regime (low volatility features)
         - Trending regime (high momentum features)
         
         Args:
