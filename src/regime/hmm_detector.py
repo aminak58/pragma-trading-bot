@@ -215,6 +215,125 @@ class RegimeDetector:
                 )
         
         return feature_df.values
+
+    
+    def compute_trend_phase_score(self, dataframe: pd.DataFrame, window: int = 50) -> pd.Series:
+        """
+        Compute a composite Trend Phase Score with conservative weighting and rolling
+        standardization to be robust across pairs/timeframes. This does not affect
+        the HMM model; it is a separate diagnostic signal.
+
+        Components (all smoothed, standardized with rolling z-score):
+        - EMA20/50/100 slopes + MACD slope (higher weight)
+        - Z-score of price vs EMA50, distance to BB mid
+        - Phase location: distance to rolling high/low, recovery-from-low
+        - Volatility context: BB width, ATR%
+
+        Args:
+            dataframe: OHLCV dataframe with columns ['open','high','low','close','volume']
+            window: Rolling window for z-score standardization (default: 50)
+
+        Returns:
+            pd.Series of the composite score aligned to dataframe.index
+        """
+        df = dataframe.copy()
+        if any(col not in df.columns for col in ['open', 'high', 'low', 'close', 'volume']):
+            raise ValueError("Dataframe must contain ['open','high','low','close','volume']")
+
+        # EMAs and slopes
+        ema20 = df['close'].ewm(span=20, adjust=False).mean()
+        ema50 = df['close'].ewm(span=50, adjust=False).mean()
+        ema100 = df['close'].ewm(span=100, adjust=False).mean()
+        slope20 = ema20.diff()
+        slope50 = ema50.diff()
+        slope100 = ema100.diff()
+
+        # MACD slope
+        macd_fast = df['close'].ewm(span=12, adjust=False).mean()
+        macd_slow = df['close'].ewm(span=26, adjust=False).mean()
+        macd = macd_fast - macd_slow
+        macd_slope = macd.diff()
+
+        # Price vs EMA50 z-score
+        price_minus_ema50 = df['close'] - ema50
+        zscore_ema50 = (price_minus_ema50 - price_minus_ema50.rolling(window).mean()) / (
+            price_minus_ema50.rolling(window).std()
+        )
+
+        # Distance to BB mid (20 SMA)
+        bb_mid = df['close'].rolling(20).mean()
+        dist_bb_mid = (df['close'] - bb_mid) / bb_mid
+
+        # Phase location relative to rolling extrema
+        roll_high = df['close'].rolling(100).max()
+        roll_low = df['close'].rolling(100).min()
+        dist_to_high = (roll_high - df['close']) / roll_high
+        recovery_from_low = (df['close'] - roll_low) / (roll_high - roll_low + 1e-9)
+
+        # Volatility context
+        bb_width = (df['high'].rolling(20).max() - df['low'].rolling(20).min()) / df['close']
+        atr_pct = (df['high'] - df['low']).rolling(14).mean() / df['close']
+
+        # Rolling z-score standardization helper
+        def rz(series: pd.Series, w: int = window) -> pd.Series:
+            m = series.rolling(w).mean()
+            s = series.rolling(w).std()
+            return (series - m) / (s + 1e-9)
+
+        # Standardize components
+        s_slope20 = rz(slope20)
+        s_slope50 = rz(slope50)
+        s_slope100 = rz(slope100)
+        s_macd_slope = rz(macd_slope)
+        s_z_ema50 = rz(zscore_ema50)
+        s_dist_bb_mid = rz(dist_bb_mid)
+        s_dist_to_high = rz(dist_to_high)
+        s_recovery_from_low = rz(recovery_from_low)
+        s_bb_width = rz(bb_width)
+        s_atr_pct = rz(atr_pct)
+
+        # Conservative weighting: slopes/acceleration get higher weights
+        score = (
+            0.22 * s_slope20.fillna(0) +
+            0.16 * s_slope50.fillna(0) +
+            0.10 * s_slope100.fillna(0) +
+            0.16 * s_macd_slope.fillna(0) +
+            0.12 * s_z_ema50.fillna(0) +
+            0.08 * s_dist_bb_mid.fillna(0) +
+            0.08 * s_recovery_from_low.fillna(0) +
+            (-0.04) * s_dist_to_high.fillna(0) +
+            (-0.08) * s_bb_width.fillna(0) +
+            (-0.04) * s_atr_pct.fillna(0)
+        )
+
+        return score.rename('trend_phase_score')
+
+
+    def summarize_trend_phase(self, dataframe: pd.DataFrame) -> dict:
+        """
+        Quick validation helper: returns distribution stats and correlations
+        with forward log-returns (5 and 20 candles).
+
+        Returns a dict with percentiles and correlations for rapid inspection.
+        """
+        score = self.compute_trend_phase_score(dataframe)
+        df = dataframe.copy()
+        df['score'] = score
+        # Forward returns (no leakage for current bar)
+        df['fret_5'] = np.log(df['close'].shift(-5) / df['close'])
+        df['fret_20'] = np.log(df['close'].shift(-20) / df['close'])
+
+        desc = df['score'].dropna().quantile([0.05, 0.25, 0.5, 0.75, 0.95]).to_dict()
+        corr5 = float(df[['score', 'fret_5']].dropna().corr().iloc[0, 1]) if df[['score', 'fret_5']].dropna().shape[0] > 5 else np.nan
+        corr20 = float(df[['score', 'fret_20']].dropna().corr().iloc[0, 1]) if df[['score', 'fret_20']].dropna().shape[0] > 20 else np.nan
+
+        return {
+            'percentiles': desc,
+            'corr_forward_5': corr5,
+            'corr_forward_20': corr20,
+            'count': int(df['score'].dropna().shape[0])
+        }
+
     
     def train(self, dataframe: pd.DataFrame, lookback: int = 1000) -> 'RegimeDetector':
         """
