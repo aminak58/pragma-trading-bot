@@ -1,230 +1,72 @@
 {
-  "strategy": "RegimeAdaptiveStrategy",
-  "strategy_path": "src/strategies",
-  "timeframe": "5m",
-  "dry_run": false,
-  "stake_currency": "USDT",
-  "stake_amount": 5000,
-  "max_open_trades": 5,
-  "tradable_balance_ratio": 0.95,
-  "exchange": {
-    "name": "binance",
-    "key": "${BINANCE_API_KEY}",
-    "secret": "${BINANCE_SECRET_KEY}",
-    "ccxt_config": {
-      "enableRateLimit": true,
-      "rateLimit": 1200,
-      "timeout": 30000
-    },
-    "ccxt_async_config": {
-      "enableRateLimit": true,
-      "rateLimit": 1200,
-      "timeout": 30000
-    }
-  },
-  "pairlists": [
-    {
-      "method": "StaticPairList"
-    }
-  ],
-  "pairs": [
-    "BTC/USDT",
-    "ETH/USDT",
-    "BNB/USDT",
-    "ADA/USDT",
-    "SOL/USDT",
-    "MATIC/USDT",
-    "DOT/USDT",
-    "AVAX/USDT"
-  ],
-  "edge": {
-    "enabled": false
-  },
-  "telegram": {
+  "environment": "production",
+  "trading": {
     "enabled": true,
-    "token": "${TELEGRAM_BOT_TOKEN}",
-    "chat_id": "${TELEGRAM_CHAT_ID}",
-    "reload": true,
-    "balance_dust_level": 0.01,
-    "reload_interval": 60
-  },
-  "api_server": {
-    "enabled": true,
-    "listen_ip_address": "0.0.0.0",
-    "listen_port": 8080,
-    "username": "${API_USERNAME}",
-    "password": "${API_PASSWORD}",
-    "jwt_secret_key": "${JWT_SECRET_KEY}",
-    "CORS_origins": ["${FRONTEND_URL}"],
-    "ws_token": "${WS_TOKEN}",
-    "timeout": 30
-  },
-  "bot_name": "Pragma-Production",
-  "initial_state": "running",
-  "force_entry_enable": false,
-  "internals": {
-    "process_throttle_secs": 5,
-    "heartbeat_interval": 60,
-    "max_open_trades_per_pair": 1
-  },
-  "execution": {
-    "mode": "live",
-    "confirm_live": true,
-    "safety_phrase": "I_UNDERSTAND_THE_RISKS",
-    "safety_checks": true,
-    "monitoring": true,
-    "alerts": true,
-    "emergency_stop": true,
-    "auto_restart": true
+    "dry_run": false,
+    "max_positions": 5,
+    "max_portfolio_heat": 0.8,
+    "max_drawdown": 0.15,
+    "daily_loss_limit": 0.05
   },
   "risk_management": {
-    "max_position_size": 0.02,
-    "max_total_exposure": 0.15,
-    "daily_loss_limit": 0.03,
-    "max_drawdown": 0.08,
+    "kelly_safety_factor": 0.25,
+    "max_position_size": 0.2,
+    "volatility_threshold": 0.05,
+    "correlation_threshold": 0.7,
     "circuit_breakers": {
-      "enabled": true,
-      "max_consecutive_losses": 5,
-      "volatility_threshold": 0.05,
-      "emergency_stop": true,
-      "cooldown_period": 3600
-    },
-    "kelly_criterion": {
-      "enabled": true,
-      "max_kelly_fraction": 0.20,
-      "regime_adjustment": true,
-      "confidence_threshold": 0.7
-    },
-    "dynamic_stops": {
-      "enabled": true,
-      "atr_multiplier": 2.0,
-      "trailing_stop": true,
-      "breakeven_protection": true,
-      "time_based_stops": true
-    },
-    "position_sizing": {
-      "enabled": true,
-      "method": "kelly_criterion",
-      "min_position_size": 10,
-      "max_position_size": 1000
-    }
-  },
-  "regime_detection": {
-    "enabled": true,
-    "n_states": 3,
-    "lookback": 500,
-    "retrain_interval": 15,
-    "confidence_threshold": 0.7,
-    "auto_retrain": true
-  },
-  "freqai": {
-    "enabled": true,
-    "model_training": {
-      "enabled": true,
-      "retrain_interval": 15,
-      "min_training_samples": 1000,
-      "auto_retrain": true,
-      "model_validation": true
-    },
-    "feature_engineering": {
-      "enabled": true,
-      "include_regime_features": true,
-      "include_technical_features": true,
-      "include_volume_features": true,
-      "include_statistical_features": true,
-      "include_lagged_features": true,
-      "include_cross_asset_features": true
-    },
-    "model_selection": {
-      "enabled": true,
-      "ensemble_method": "weighted_average",
-      "confidence_threshold": 0.6,
-      "model_switching": true
-    },
-    "performance_tracking": {
-      "enabled": true,
-      "metrics_interval": 3600,
-      "model_comparison": true
+      "daily_loss": 0.05,
+      "max_drawdown": 0.15,
+      "max_positions": 5,
+      "volatility": 0.1
     }
   },
   "monitoring": {
     "enabled": true,
-    "metrics_interval": 300,
-    "health_check_interval": 60,
-    "performance_tracking": true,
-    "real_time_dashboard": true,
+    "metrics_interval": 60,
+    "health_check_interval": 300,
     "alert_thresholds": {
-      "memory_usage": 80,
-      "cpu_usage": 80,
-      "response_time": 1000,
-      "error_rate": 5,
-      "drawdown": 0.05
-    },
-    "external_monitoring": {
-      "enabled": true,
-      "prometheus": true,
-      "grafana": true
+      "cpu_percent": 80,
+      "memory_percent": 85,
+      "disk_percent": 90,
+      "network_latency": 1000
     }
   },
   "alerts": {
     "enabled": true,
-    "telegram": true,
-    "email": true,
-    "webhook": true,
-    "levels": ["WARNING", "ERROR", "CRITICAL"],
-    "emergency_contacts": [
-      "${EMERGENCY_EMAIL}",
-      "${EMERGENCY_PHONE}"
-    ],
-    "escalation": {
+    "email": {
       "enabled": true,
-      "levels": 3,
-      "timeout": 300
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "username": "your_email@gmail.com",
+      "password": "your_app_password"
+    },
+    "webhook": {
+      "enabled": false,
+      "url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
     }
   },
-  "security": {
-    "api_key_permissions": "read_only",
-    "ip_whitelist": ["${ALLOWED_IPS}"],
-    "rate_limiting": true,
-    "encryption": true,
-    "audit_logging": true,
-    "two_factor_auth": false,
-    "session_timeout": 3600
-  },
-  "backup": {
-    "enabled": true,
-    "interval": "daily",
-    "retention_days": 90,
-    "encryption": true,
-    "cloud_storage": true,
-    "s3_bucket": "${BACKUP_S3_BUCKET}",
-    "s3_region": "${BACKUP_S3_REGION}"
-  },
-  "maintenance": {
-    "enabled": true,
-    "schedule": "02:00",
-    "timezone": "UTC",
-    "tasks": [
-      "model_retraining",
-      "log_rotation",
-      "database_cleanup",
-      "backup_verification"
-    ]
+  "data": {
+    "sources": [
+      "binance",
+      "coinbase"
+    ],
+    "timeframes": [
+      "5m",
+      "15m",
+      "1h"
+    ],
+    "pairs": [
+      "BTC/USDT",
+      "ETH/USDT",
+      "BNB/USDT"
+    ],
+    "retention_days": 30
   },
   "logging": {
     "level": "INFO",
-    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     "file": "logs/production.log",
-    "max_bytes": 10485760,
-    "backup_count": 30,
-    "audit_log": "logs/audit.log",
-    "error_log": "logs/error.log",
-    "performance_log": "logs/performance.log"
-  },
-  "environment": {
-    "name": "production",
-    "debug": false,
-    "testing": false,
-    "development": false
+    "max_size": "10MB",
+    "backup_count": 5,
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   }
 }

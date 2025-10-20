@@ -373,7 +373,16 @@ class RegimeDetector:
         conf_series: Optional[pd.Series] = None,
         conf_min: float = 0.6,
         median_window: int = 5,
-        dwell_min: int = 3
+        dwell_min: int = 3,
+        # Percentile overrides
+        early_up_in: float = 0.80,
+        early_up_out: float = 0.70,
+        early_dn_in: float = 0.20,
+        early_dn_out: float = 0.30,
+        late_up_in: float = 0.90,
+        late_up_out: float = 0.85,
+        late_dn_in: float = 0.10,
+        late_dn_out: float = 0.15
     ) -> pd.Series:
         """
         Label each bar with one of 5 phases using Trend Phase Score + simple slope/volatility proxies
@@ -413,6 +422,20 @@ class RegimeDetector:
         p30 = thresholds['p30']; p70 = thresholds['p70']
         p80 = thresholds['p80']; p85 = thresholds['p85']; p90 = thresholds['p90']
 
+        # Apply overrides by re-mapping desired percentiles
+        # compute corresponding score cutoffs from sample percentiles
+        def q(p: float) -> float:
+            return float(score.dropna().quantile(p)) if score.notna().any() else np.nan
+
+        up_in_cut = q(early_up_in)
+        up_out_cut = q(early_up_out)
+        dn_in_cut = q(early_dn_in)
+        dn_out_cut = q(early_dn_out)
+        up_late_in_cut = q(late_up_in)
+        up_late_out_cut = q(late_up_out)
+        dn_late_in_cut = q(late_dn_in)
+        dn_late_out_cut = q(late_dn_out)
+
         # Hysteresis labeling
         labels = pd.Series('Neutral', index=score.index, dtype='object')
         state = 'Neutral'
@@ -439,26 +462,26 @@ class RegimeDetector:
             if state == 'Neutral':
                 if is_sideways:
                     state = 'Sideways'
-                elif v >= p90 and (not pd.isna(a) and a <= 0):
+                elif v >= up_late_in_cut and (not pd.isna(a) and a <= 0):
                     state = 'Uptrend_Late'
-                elif v >= p80 and (not pd.isna(a) and a > 0):
+                elif v >= up_in_cut and (not pd.isna(a) and a > 0):
                     state = 'Uptrend_Early'
-                elif v <= p10 and (not pd.isna(a) and a >= 0):
+                elif v <= dn_late_in_cut and (not pd.isna(a) and a >= 0):
                     state = 'Downtrend_Late'
-                elif v <= p20 and (not pd.isna(a) and a < 0):
+                elif v <= dn_in_cut and (not pd.isna(a) and a < 0):
                     state = 'Downtrend_Early'
             elif state == 'Uptrend_Early':
                 # Exit band to Neutral
-                if v < p70:
+                if v < up_out_cut:
                     state = 'Neutral'
             elif state == 'Downtrend_Early':
-                if v > p30:
+                if v > dn_out_cut:
                     state = 'Neutral'
             elif state == 'Uptrend_Late':
-                if v < p85:
+                if v < up_late_out_cut:
                     state = 'Neutral'
             elif state == 'Downtrend_Late':
-                if v > p15:
+                if v > dn_late_out_cut:
                     state = 'Neutral'
 
             labels.at[t] = state if not is_sideways else 'Sideways'
@@ -528,14 +551,13 @@ class RegimeDetector:
         self.model.tol = 1e-6    # Tighter tolerance
         
         try:
-        self.model.fit(X_scaled)
-        self.is_trained = True
-        
-        # Determine regime names based on characteristics
-        self._assign_regime_names(X_scaled)
+            self.model.fit(X_scaled)
+            self.is_trained = True
+            
+            # Determine regime names based on characteristics
+            self._assign_regime_names(X_scaled)
             
             logger.info(f"HMM trained successfully with {X_scaled.shape[0]} samples")
-            
         except Exception as e:
             logger.error(f"HMM training failed: {e}")
             raise
